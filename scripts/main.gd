@@ -34,6 +34,7 @@ const COL_DOOR_OPEN := Color(0.20, 0.62, 0.46)
 const PLAYER_SCENE := preload("res://scenes/player.tscn")
 const ENEMY_SCENE := preload("res://scenes/enemy.tscn")
 const HUD_SCENE := preload("res://scenes/hud.tscn")
+const QA_PROBE := preload("res://scripts/qa_probe.gd")
 
 var player: Node = null
 var hud: CanvasLayer = null
@@ -68,19 +69,36 @@ func _ready() -> void:
 	_spawn_player()
 	_spawn_hud()
 	touch = TouchUI.create(self)
-	if _touch_expected():
+	# 是否默认用触屏，交给 TouchUI.platform_prefers_touch() 判断。
+	# Web 上不能信 DisplayServer.is_touchscreen_available()，理由见那边的注释。
+	if TouchUI.platform_prefers_touch():
 		touch.request_enable()
+	elif OS.get_cmdline_user_args().has("--touch"):
+		# 桌面端手动验证触屏 UI：godot --path . -- --touch
+		touch.request_enable(true)
 	_enter_room(1)
+	if _qa_enabled():
+		add_child(QA_PROBE.new())
 
 
-func _touch_expected() -> bool:
-	if DisplayServer.is_touchscreen_available() or OS.has_feature("mobile"):
-		return true
-	# 桌面端想手动验证触屏 UI：godot --path . -- --touch
-	for a in OS.get_cmdline_user_args():
-		if a == "--touch":
+## 是否挂上自动化验证探针（见 scripts/qa_probe.gd）。三种触发方式任一命中即可：
+##   1. Web：URL 带 ?fps_debug=1
+##   2. 桌面：环境变量 FPS_DEBUG=1
+##   3. 命令行：godot --path . -- --fps-debug
+func _qa_enabled() -> bool:
+	# 网页版读不到环境变量（Emscripten 的 env 不来自 URL，导出后的 index.js 里
+	# 连 get_environment 的实现都搜不到），所以直接问浏览器要 location.search。
+	#
+	# 这里用 Engine.get_singleton 而不是直接写 JavaScriptBridge：
+	# 那个类只在 Web 构建里注册，直接写名字会让桌面构建的脚本解析失败。
+	if Engine.has_singleton("JavaScriptBridge"):
+		var js := Engine.get_singleton("JavaScriptBridge")
+		var search := str(js.eval("window.location.search", true))
+		if search.contains("fps_debug=1"):
 			return true
-	return false
+	if OS.get_environment("FPS_DEBUG") == "1":
+		return true
+	return OS.get_cmdline_user_args().has("--fps-debug")
 
 
 # ============================================================

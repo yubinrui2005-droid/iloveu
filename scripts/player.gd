@@ -60,6 +60,7 @@ var _fire_timer := 0.0
 var _reload_timer := 0.0
 var _swap_timer := 0.0
 var _fire_prev := false
+var _lock_cooldown := 0.0
 var _pitch := 0.0
 var _recoil := 0.0
 var _bob_time := 0.0
@@ -174,14 +175,41 @@ func update_unlocks(wave: int) -> Array[WeaponData]:
 #  输入 / 视角
 # ============================================================
 func _input(event: InputEvent) -> void:
-	if not can_control:
-		return
 	if TouchUI.is_active():
 		return                       # 触屏模式下视角由 TouchUI 的拖动接管
-	if Input.get_mouse_mode() != Input.MOUSE_MODE_CAPTURED:
+
+	# 点击时补一次指针锁定。
+	#
+	# 浏览器只在"用户手势"（真实点击）里允许 requestPointerLock()，而 _ready() 里
+	# 那次捕获是随页面加载跑起来的，必然被拒（控制台能看到 WrongDocumentError）；
+	# Web 上 is_touchscreen_available() 为真时，Godot 更是连请求都不发。
+	# 所以锁定的重试只能挂在"点击"这一帧上 —— 这一帧就是用户手势。
+	if event is InputEventMouseButton and event.pressed and can_control \
+			and _lock_cooldown <= 0.0:
+		if Input.get_mouse_mode() != Input.MOUSE_MODE_CAPTURED:
+			# 冷却不是防误触，是防刷屏：浏览器不支持指针锁定时（例如 iPhone 版
+			# Safari），每次点击都会产生一条 promise 拒绝的异常；锁定成功之后
+			# 这个分支就再也不会进来了。
+			_lock_cooldown = 1.5
+			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+
+	if not _look_enabled():
 		return
 	if event is InputEventMouseMotion:
 		_look(-event.relative.x * mouse_sensitivity, -event.relative.y * mouse_sensitivity)
+
+
+## 视角是否响应鼠标移动。
+##
+## ★ 这里以前卡的是 `Input.get_mouse_mode() == MOUSE_MODE_CAPTURED`，在网页版上是个陷阱：
+##   那个值反映的是"浏览器有没有真的锁住指针"，而不是"游戏想不想锁定"。浏览器拒绝
+##   锁定时它是 VISIBLE，于是视角被整段跳过 —— 玩家看到的现象就是
+##   "手机能玩，但电脑网页端鼠标完全转不动镜头"（实测 yaw 恒为 0.0°）。
+##   现在只判游戏状态：鼠标位移在锁定与未锁定下都会照常送来（Godot 取的是浏览器原生
+##   movementX/movementY），所以没锁定也能转镜头，代价只是光标会跑到画面边缘；
+##   点一下画面就会补上锁定，见上面的说明。
+func _look_enabled() -> bool:
+	return can_control and not get_tree().paused
 
 
 func _look(yaw: float, pitch_delta: float) -> void:
@@ -207,6 +235,7 @@ func _key_just(action: String) -> bool:
 
 
 func _physics_process(delta: float) -> void:
+	_lock_cooldown = maxf(_lock_cooldown - delta, 0.0)
 	if not is_on_floor():
 		velocity.y -= GRAVITY * delta
 

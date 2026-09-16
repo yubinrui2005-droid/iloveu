@@ -15,6 +15,7 @@ extends CanvasLayer
 const JOY_RADIUS := 84.0
 const KNOB_RADIUS := 34.0
 const BTN_HIT_PAD := 16.0
+const MOUSE_TAKEOVER_DELAY_MS := 700   ## 触摸后多久才允许鼠标抢回控制权（见 _hand_back_to_mouse）
 
 static var _inst: TouchUI = null
 
@@ -23,6 +24,8 @@ var active := false
 var _sticky := false           ## 玩家/平台"想要"触屏操控（一旦为真就不再关掉）
 var _allow := true             ## 当前局面允不允许显示（强化三选一/暂停时不显示）
 var _suppress_auto := false
+var _force := false            ## 手动指定（--touch / 测试）：连"鼠标抢回控制权"都不允许
+var _last_touch_ms := -999999  ## 最近一次真实触摸的时刻，用来区分真鼠标和触摸补出来的鼠标事件
 
 var _layer_root: Control
 var _buttons: Array = []
@@ -144,8 +147,12 @@ func allow(v: bool) -> void:
 
 
 ## 主动开启触屏操控（真机检测 / 首次触摸 / 命令行参数都会走这里）
-func request_enable() -> void:
+##
+## manual=true 表示"这是人手动指定的"，此时不再允许鼠标把控制权抢回去。
+func request_enable(manual := false) -> void:
 	_sticky = true
+	if manual:
+		_force = true
 	_refresh()
 
 
@@ -166,12 +173,21 @@ func _set_active(v: bool) -> void:
 	_redraw()
 
 
-func detect() -> bool:
-	## 是否应该默认开启（真机 / 移动端平台）
-	return DisplayServer.is_touchscreen_available() \
-			or OS.has_feature("mobile") \
-			or OS.has_feature("web_android") \
-			or OS.has_feature("web_ios")
+## 平台是否"确实"应该默认用触屏操控（真手机 / 平板）。
+##
+## ★ 别用 DisplayServer.is_touchscreen_available() 判断这件事，它在 Web 上的实现是
+##   `"ontouchstart" in window`（导出后在 index.js 里搜
+##   _godot_js_display_touchscreen_is_available 就能看到）。那是"浏览器支持触摸事件"，
+##   不是"这台机器有触摸屏"—— Windows 上装过触摸屏、或某些人体学输入设备的机器都会为真。
+##   误判的代价：电脑玩家一进游戏就被切进触屏模式，而 player.gd 在触屏模式下会把
+##   鼠标控制权整个让出去，于是"电脑网页端鼠标完全转不动镜头"。
+##   所以 Web 上只认 UA；桌面浏览器交给"第一次真实触摸"来触发（见 _input）。
+static func platform_prefers_touch() -> bool:
+	if OS.has_feature("mobile"):
+		return true
+	if OS.has_feature("web"):
+		return OS.has_feature("web_android") or OS.has_feature("web_ios")
+	return DisplayServer.is_touchscreen_available()
 
 
 # ============================================================
@@ -213,9 +229,12 @@ func _redraw() -> void:
 #  输入
 # ============================================================
 func _input(event: InputEvent) -> void:
-	var is_touch := event is InputEventScreenTouch or event is InputEventScreenDrag
-	if is_touch and not _sticky and not _suppress_auto:
-		request_enable()            # 第一次摸屏幕就自动亮出触屏控件
+	if event is InputEventScreenTouch or event is InputEventScreenDrag:
+		_last_touch_ms = Time.get_ticks_msec()
+		if not _sticky and not _suppress_auto:
+			request_enable()            # 第一次摸屏幕就自动亮出触屏控件
+	elif event is InputEventMouseMotion and _sticky and not _force:
+		_hand_back_to_mouse(event)
 
 	if not active:
 		return
@@ -224,6 +243,26 @@ func _input(event: InputEvent) -> void:
 		_handle_touch(event.index, event.position, event.pressed)
 	elif event is InputEventScreenDrag:
 		_handle_drag(event.index, event.position)
+
+
+## 鼠标反过来把控制权抢回来。
+##
+## 为什么需要：触摸屏笔记本上手指只要碰过一次屏幕，_sticky 就把触屏模式焊死了，
+## 之后鼠标再也转不动镜头（而"第一次触摸自动启用"又是必需的，否则平板用户没控件）。
+## 判据要满足两条，缺一不可：
+##   1. 位移够大 —— 过滤掉鼠标停在原地时的零位移噪声；
+##   2. 最近 0.7 秒内没有任何触摸事件 —— 这半句是关键：引擎默认开着
+##      input_devices/pointing/emulate_mouse_from_touch，手指拖动会被补出一串
+##      MouseMotion，只判位移就会把玩家的手指误判成鼠标，触屏控件一动就自己关掉。
+##      窗口取 0.7 秒就够：补出来的鼠标事件一定紧跟在触摸的几毫秒之后；
+##      真实的"手指离开、马上换鼠标"本来也分不出，多等一下即可。
+func _hand_back_to_mouse(motion: InputEventMouseMotion) -> void:
+	if absf(motion.relative.x) + absf(motion.relative.y) < 6.0:
+		return
+	if Time.get_ticks_msec() - _last_touch_ms < MOUSE_TAKEOVER_DELAY_MS:
+		return
+	_sticky = false
+	_refresh()
 
 
 ## 给自动化测试用：先关掉"自动启用"，再手动 request_enable

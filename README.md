@@ -61,6 +61,11 @@
 触屏控件**只在真的摸到屏幕时才出现**，插鼠标的电脑完全看不到它。
 手机请横屏握持；竖屏时会盖一层"请把手机横过来"的提示。
 
+两种输入会自动互相让位：**鼠标一动就把控制权抢回来，手指一碰屏幕又切回触屏**，
+所以触摸屏笔记本两种都能用，不需要任何设置。（"是不是真鼠标"的判据是
+"位移够大 **且** 最近 0.7 秒内没有任何触摸事件"——后半句是必需的，
+引擎默认会把触摸补成鼠标事件，只看位移的话手指会被误判成鼠标。）
+
 ---
 
 ## 二、在线试玩（GitHub Pages）
@@ -132,6 +137,40 @@ godot --headless --path . --fixed-fps 60 --script res://tools/smoke_test.gd -- -
 它还会盯着"有没有在推进"：连续 600 帧房间/波次/击杀都不变就打印现场状态
 （暂停与否、HUD 状态、`enemies_alive`、场上敌人里有几个是"已死但没回收"、门开没开），
 避免出现"跑完了但其实什么都没测到"的静默假通过。
+
+> **改完脚本一定要跑一次②。** 导出 Web 时就算脚本编译失败，导出本身也是**退出码 0**，
+> 打出来的包照样能启动、能渲染，只是某个脚本是空的 —— 场面看起来像玩法 bug，
+> 实际是构建残缺（这个坑真踩过：`player.gd` 没加载，表现是"鼠标转不动视角"）。
+
+### 输入链路怎么验证（视角/摇杆真的吃到输入了吗）
+
+截图没法判断这件事：场景里有敌人巡逻、枪口动画、雾效，两张截图永远不一样，
+"画面在动"分不出"视角跟着鼠标转了"还是"敌人自己在走"。所以走游戏内的量化探针：
+
+```bash
+# 起一个带调试端口的 Chrome（headless 即可）
+chrome --headless=new --remote-debugging-port=9222 --enable-unsafe-swiftshader \
+       --use-angle=swiftshader --window-size=1280,720 about:blank
+
+# 普通桌面：鼠标扫动后 yaw 该变，且"实测变化 / 预期变化"要接近 1
+node tools/input_probe.mjs http://127.0.0.1:8765/index.html .tmp/probe-desktop
+
+# 触摸屏笔记本：先摸屏幕（控件该出现），再动鼠标（该让位）
+TOUCH_EMU=1 TOUCH_FIRST=1 node tools/input_probe.mjs http://127.0.0.1:8765/index.html .tmp/probe-hybrid
+
+# 真手机：Android UA 下触屏控件该自动出现
+TOUCH_EMU=1 UA_ANDROID=1 VIEWPORT=844x390 node tools/input_probe.mjs http://127.0.0.1:8765/index.html .tmp/probe-mobile
+```
+
+`?fps_debug=1` 会挂上 `scripts/qa_probe.gd`，它每 0.5 秒往浏览器控制台打一行
+`[qa] yaw=.. pitch=.. touch=.. mouse_mode=.. paused=.. ctl=..`；
+`tools/input_probe.mjs` 用 CDP 抓这行、按 360° 取模算 yaw 差、再和浏览器实测的
+`|movementX|` 换算出的预期值对比。**构建里有脚本错误它会直接以退出码 3 失败**，
+不会让你对着一个残缺构建分析半天。探针只在带 `?fps_debug=1` 时挂载，玩家看不到。
+
+> 探针还有一个"续命"作用：自动化测试里玩家站着不动，三五秒就会被围殴致死，
+> 死了之后 `can_control=0` / `paused=true`，视角本来就不该响应 ——
+> 不续命的话测出来的"转不动"全是假阳性。
 
 ### 把画面录成 PNG 序列来肉眼验收
 
@@ -281,6 +320,35 @@ python tools/build_font.py
 
 `player.gd` 顶部保留了 `@export` 的速度 / 跳跃 / 灵敏度；**武器数值改 `weapons.gd`**（不再是 `player.gd`）。
 
+### 11. 网页版的鼠标视角：两个必须知道的坑
+
+这两个坑的症状一模一样 —— **"手机能玩，电脑网页端鼠标完全转不动视角"**，但成因不同，都被踩过：
+
+**坑一：`Input.get_mouse_mode()` 在网页版上不能当门槛用。**
+
+它反映的是"浏览器有没有真的锁住指针"，而不是"游戏想不想锁定"。浏览器只在**用户手势**
+（真实点击）里允许 `requestPointerLock()`，而 `player._ready()` 里那次捕获是随页面加载跑起来的，
+必然被拒（控制台能看到 `WrongDocumentError`）。于是这个值是 `VISIBLE`，
+原来那句 `if Input.get_mouse_mode() != MOUSE_MODE_CAPTURED: return` 会把**整段视角处理跳过**。
+
+现在的做法：只判游戏状态（`can_control` 且没暂停），指针锁定改成**点击时补一次**。
+没锁定时鼠标位移照样会来（Godot 网页端取的是浏览器原生 `movementX/movementY`），
+所以不锁定也能转视角，只是光标会跑到画面边缘；点一下画面锁定就补上了。
+
+**坑二：`DisplayServer.is_touchscreen_available()` 在网页版上是能力检测，不是"真有触摸屏"。**
+
+它的实现就一句 `"ontouchstart" in window`（导出后搜 `index.js` 里的
+`_godot_js_display_touchscreen_is_available` 就能看到），Windows 上装过触摸屏或某些
+人体学输入设备的机器都会为真。用它判断"是不是手机"，电脑玩家一进游戏就被切进触屏模式，
+而触屏模式下 `player.gd` 会把鼠标控制权整个让出去 —— 症状和坑一一模一样。
+
+现在的做法：Web 上只认 UA（`web_android` / `web_ios` 这两个平台特征），
+桌面浏览器交给"第一次真实触摸"来触发，再加一层鼠标/触摸互相抢回的仲裁。
+
+> 顺带一个数字：**网页版的视角灵敏度跟原生完全一致**。玩家脚本里
+> `mouse_sensitivity = 0.0022 rad/px`，实测 480px 位移 → 视角转 60.5°，
+> 预期 60.5°（比值 1.00）。不用担心移植到浏览器手感变了。
+
 ---
 
 ## 六、导出
@@ -389,6 +457,10 @@ git tag v0.2.0 && git push origin v0.2.0
 | 队友克隆后打开报错 | 让对方用**同版本的 Godot** 打开；Godot 的小版本差异会改 `project.godot` |
 | `project.godot` 的开头注释被改写了 | Godot 每次导入都会用自己的样板注释覆盖文件头，改回去也没用，接受即可 |
 | 改脚本后 `git status` 多出 `.gd.uid` | Godot 4.4+ 的资源标识文件，**要提交**（和 `.import` 一样） |
+| **电脑网页版鼠标转不动视角** | 两个坑叠在一起：`Input.get_mouse_mode()` 在网页版反映的是"浏览器锁没锁住指针"，`is_touchscreen_available()` 又只是 `"ontouchstart" in window`。详见第五节第 11 条 |
+| 导出成功但某个脚本是空的 | `--export-release` 的退出码是 0，**脚本编译失败不会让导出失败**，包照样能启动渲染。改完一定要跑一次冒烟测试（见第三节） |
+| `--write-movie` 的 wav 里听不出混音改动 | 它录的是总线效果**之前**的信号，用来看总线压缩/限制器是无效的 |
+| 用 CDP 做网页自动化测试，结果飘忽 | `Emulation` 的模拟状态（视口尺寸、触摸、UA）在会话之间会残留，每轮都要**显式设定**而不是指望"清掉上一次"；测之前顺手 `Network.setCacheDisabled`，否则测的是旧 pck |
 
 ---
 
