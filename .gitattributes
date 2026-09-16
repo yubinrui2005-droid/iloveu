@@ -1,0 +1,16 @@
+# 统一换行符，避免 Windows / macOS 协作时整个文件被标记为改动
+* text=auto eol=lf
+
+# Godot 的文本资源也是普通文本
+*.gd    text eol=lf
+*.tscn  text eol=lf
+*.tres  text eol=lf
+*.godot text eol=lf
+
+# 二进制资源不要做换行转换
+*.png   binary
+*.jpg   binary
+*.svg   text eol=lf
+*.ogg   binary
+*.wav   binary
+*.ttf   binary
