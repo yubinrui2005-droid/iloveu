@@ -162,68 +162,63 @@ dir = (dir + normal.normalized() * 1.6).normalized()
 
 ---
 
-## 六、上传到 GitHub
+## 六、仓库与后续推送
 
-### 0. 先确认本地仓库状态
+**仓库已经建好并推送完成：** https://github.com/yubinrui2005-droid/iloveu
 
-本项目已经完成 `git init` 和首次提交。执行 `git log --oneline` 应该能看到一条提交记录。
-
-### 1. 在 GitHub 上创建空仓库
-
-打开 https://github.com/new ：
-
-- **Repository name**：比如 `rogue-fps-godot`
-- 可见性随意（Public 免费）
-- **不要**勾选 "Add a README file" / ".gitignore" / "license"，否则会和本地历史冲突
-
-创建后记下仓库地址，比如 `https://github.com/你的用户名/rogue-fps-godot.git`。
-
-### 2. 关联远程仓库并推送
-
-在项目目录里执行（把地址换成你自己的）：
+日常改完代码，只需要三条命令：
 
 ```bash
-git remote add origin https://github.com/你的用户名/rogue-fps-godot.git
-git branch -M main
-git push -u origin main
+cd H:/fps
+git add -A
+git commit -m "描述这次改了什么"
+git push
 ```
 
-### 3. 关于认证（Windows 上最常卡住的一步）
+`git push` 之后加 `-u` 只需第一次用，之后直接 `git push` 即可。
 
-GitHub 早已不支持密码推送，三种做法挑一种：
+### 关于认证（Windows 上最容易卡住的一步）
 
-**a) 浏览器登录（最省事，需要 Git for Windows 2.39+）**
+GitHub 不支持账号密码推送。本机的情况是：**已存的 GitHub 凭据放在 Windows 凭据管理器里**，
+必须让 git 用 `wincred` 助手去读它。全局配置已经设好了：
 
 ```bash
-git config --global credential.helper manager
-git push -u origin main
+git config --global credential.helper wincred   # 已执行
 ```
 
-第一次推送会弹出浏览器让登录 GitHub，之后凭证会被存下来。
+> **踩坑记录**：本机 git 的系统默认助手是 `credential.helper=helper-selector`，
+> 它是个**需要交互选择**的助手，在非交互终端（脚本、自动化工具）里会直接挂死、无任何输出。
+> 如果哪天 `git push` 又卡住不动，先检查 `git config --global credential.helper` 是不是被改回去了。
 
-**b) 用 Personal Access Token（PAT）**
-
-GitHub → 右上角头像 → `Settings` → `Developer settings` → `Personal access tokens` → `Tokens (classic)` → `Generate new token (classic)`，勾上 `repo` 权限，复制生成的 `ghp_...`。
-推送时用户名填 GitHub 用户名，**密码处粘贴这个 token**。
-
-**c) SSH 密钥**
+如果以后换账号或 token 失效，清掉旧凭据重来：
 
 ```bash
-ssh-keygen -t ed25519 -C "你的邮箱"
-# 一路回车，然后把 ~/.ssh/id_ed25519.pub 的内容贴到 GitHub → Settings → SSH and GPG keys
-ssh -T git@github.com          # 出现 "Hi xxx!" 就成功了
-git remote set-url origin git@github.com:你的用户名/rogue-fps-godot.git
-git push -u origin main
+# 删除已存的 github 凭据
+cmdkey /delete:LegacyGeneric:target=git:https://github.com
+git push     # 会重新询问用户名和 token
 ```
 
-### 4. 想省掉手写 URL 的麻烦？装 GitHub CLI
+**其他两种认证方式（备用）**
 
-你现在机器上**没有装 `gh`**。装完之后一行就能建仓库 + 推送：
+- **Personal Access Token（PAT）**：GitHub → 头像 → `Settings` → `Developer settings` →
+  `Personal access tokens` → `Tokens (classic)` → `Generate new token (classic)`，
+  勾 `repo`，复制 `ghp_...`；推送时用户名填 GitHub 用户名，密码处粘贴 token。
+- **SSH 密钥**：
+  ```bash
+  ssh-keygen -t ed25519 -C "你的邮箱"
+  # 一路回车，把 ~/.ssh/id_ed25519.pub 内容贴到 GitHub → Settings → SSH and GPG keys
+  ssh -T git@github.com
+  git remote set-url origin git@github.com:yubinrui2005-droid/iloveu.git
+  ```
+
+### 想省掉手写 URL 的麻烦？装 GitHub CLI
+
+本机**没有装 `gh`**。装完之后一行就能建仓库 + 推送：
 
 ```bash
 winget install --id GitHub.cli
 gh auth login
-gh repo create rogue-fps-godot --public --source=. --remote=origin --push
+gh repo create <仓库名> --public --source=. --remote=origin --push
 ```
 
 ### 5. 让项目更好看：加截图和 Release
