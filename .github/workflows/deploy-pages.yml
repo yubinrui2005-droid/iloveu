@@ -104,5 +104,19 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # continue-on-error 不是为了让失败静默：Pages 没启用时 deploy-pages 只会抛一句
+      # "Creating Pages deployment failed"，看不出要做什么。这里先接住它，
+      # 再换成人能照着做的提示，最后还是 exit 1，红叉照旧。
       - id: deployment
+        continue-on-error: true
         uses: actions/deploy-pages@v4
+
+      - name: 部署失败时给出可操作的提示
+        if: steps.deployment.outcome == 'failure'
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          cat <<EOF
+          ::error title=部署失败：仓库还没启用 GitHub Pages::打开 ${REPO_URL}/settings/pages ，把 Build and deployment 的 Source 选成 "GitHub Actions"（只此一次），然后到 Actions 页面 Re-run 本工作流即可。构建产物本身没问题，不用改代码。
+          EOF
+          exit 1
