@@ -26,6 +26,14 @@ script = ExtResource("1_enemy")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
 shape = SubResource("CapsuleShape3D_enemy")
 
+[node name="Agent" type="NavigationAgent3D" parent="."]
+path_desired_distance = 0.9
+target_desired_distance = 1.1
+path_max_distance = 8.0
+radius = 0.5
+height = 1.7
+avoidance_enabled = false
+
 [node name="Model" type="Node3D" parent="."]
 
 [node name="Mesh" type="MeshInstance3D" parent="Model"]

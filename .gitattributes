@@ -14,3 +14,10 @@
 *.ogg   binary
 *.wav   binary
 *.ttf   binary
+
+# 导出产物（build/ 已忽略，这里只是保险：万一哪天要提交单个文件，
+# 别让 git 把它当文本去转换换行）
+*.wasm  binary
+*.pck   binary
+*.apk   binary
+*.tpz   binary

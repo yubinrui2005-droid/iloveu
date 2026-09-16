@@ -1,4 +1,4 @@
-[gd_scene load_steps=6 format=3 uid="uid://b1playerroguefps"]
+[gd_scene load_steps=9 format=3 uid="uid://b1playerroguefps"]
 
 [ext_resource type="Script" path="res://scripts/player.gd" id="1_player"]
 
@@ -16,6 +16,14 @@ roughness = 0.35
 
 [sub_resource type="BoxMesh" id="BoxMesh_gun_grip"]
 size = Vector3(0.045, 0.1, 0.06)
+
+[sub_resource type="SphereMesh" id="SphereMesh_flash"]
+radius = 0.06
+height = 0.12
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_flash"]
+shading_mode = 0
+albedo_color = Color(2, 1.7, 0.6, 1)
 
 [node name="Player" type="CharacterBody3D"]
 collision_layer = 2
@@ -44,3 +52,16 @@ surface_material_override/0 = SubResource("StandardMaterial3D_gun")
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.07, 0.1)
 mesh = SubResource("BoxMesh_gun_grip")
 surface_material_override/0 = SubResource("StandardMaterial3D_gun")
+
+[node name="Muzzle" type="Node3D" parent="Neck/Camera3D/Gun"]
+
+[node name="Flash" type="MeshInstance3D" parent="Neck/Camera3D/Gun/Muzzle"]
+visible = false
+mesh = SubResource("SphereMesh_flash")
+surface_material_override/0 = SubResource("StandardMaterial3D_flash")
+
+[node name="Light" type="OmniLight3D" parent="Neck/Camera3D/Gun/Muzzle"]
+light_color = Color(1, 0.82, 0.5, 1)
+light_energy = 0.0
+omni_range = 8.0
+shadow_enabled = false

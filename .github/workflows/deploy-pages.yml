@@ -1,0 +1,108 @@
+name: 导出 Web 并发布到 GitHub Pages
+
+# 为什么不是「把 build/web 提交进仓库」：
+#   index.wasm 有 39MB，每次改一行脚本都得重传一遍，仓库会迅速膨胀。
+#   改成 CI 现导出：仓库里只留源码，页面由 Actions 每次构建后发布。
+on:
+  push:
+    branches: [main]
+    # 只改文档/说明时不必重新导出
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个部署；新的 push 排队等前一个跑完，避免两个部署互相覆盖
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: "4.7.1"
+  GODOT_BIN: godot
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 导出模板有 1.2GB，每次跑都重下太浪费，按版本号缓存
+      - name: 缓存 Godot 编辑器与导出模板
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot-bin
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-stable
+
+      - name: 下载 Godot 编辑器
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p ~/godot-bin
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fL --retry 3 -o /tmp/godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -o -q /tmp/godot.zip -d ~/godot-bin
+          mv ~/godot-bin/Godot_v${GODOT_VERSION}-stable_linux.x86_64 ~/godot-bin/godot
+          chmod +x ~/godot-bin/godot
+
+      - name: 下载并安装 Web 导出模板
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fL --retry 3 -o /tmp/templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          # .tpz 其实就是一个 zip，解开后是 templates/ 目录
+          unzip -o -q /tmp/templates.tpz -d /tmp/tpl
+          tdir="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$tdir"
+          cp /tmp/tpl/templates/* "$tdir/"
+
+      - name: 让 godot 命令可用
+        run: sudo ln -sf ~/godot-bin/godot /usr/local/bin/${GODOT_BIN}
+
+      - name: 版本自检
+        run: |
+          godot --version
+          ls -1 "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable" | head
+
+      # .godot/ 不入库（体积大且是缓存），所以构建前必须重新导入一遍资源。
+      # 中文字体 assets/fonts/game_font.ttf 也在这时候被导入、打进 pck。
+      - name: 导入工程资源
+        run: godot --headless --path . --import
+
+      - name: 导出 Web 版
+        run: |
+          mkdir -p build/web
+          godot --headless --path . --export-release "Web" "$PWD/build/web/index.html"
+          ls -la build/web
+
+      - name: 冒烟测试（导出产物没坏再发布）
+        run: godot --headless --path . --fixed-fps 60 --script res://tools/smoke_test.gd -- --fast
+
+      # GitHub Pages 默认不带 COOP/COEP 响应头，
+      # 而 project.godot 里线程支持是关的（variant/thread_support=false），
+      # 所以这里不需要额外塞跨域隔离的 service worker，直接静态托管即可。
+      - name: 加一个 .nojekyll
+        run: touch build/web/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

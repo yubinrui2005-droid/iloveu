@@ -8,8 +8,9 @@
 .import/
 
 # 导出相关
+# 注意：export_presets.cfg 要提交（Web 导出配置里没有敏感信息，
+# 提交后才能让别人一键复现导出结果）。只有 Godot 3 时代的 export.cfg 该忽略。
 export.cfg
-export_presets.cfg
 
 # 自动生成的翻译文件
 *.translation
@@ -20,7 +21,13 @@ data_*/
 mono_crash.*.json
 
 # 本地导出产物（不要把 exe/pck 提交进仓库）
-build/
+#
+# 写成 build/* 而不是 build/ ：这样还能把 build/.gdignore 单独放行。
+# 那个 .gdignore 很关键 —— 有它 Godot 才会整个跳过 build 目录，
+# 否则上一次导出到 build/web/ 的 png 会被当成工程资源导入，
+# 再打进下一次导出的 pck 里，体积一次比一次大（实测 54KB 一路涨到 661KB）。
+build/*
+!build/.gdignore
 export/
 *.pck
 
@@ -33,5 +40,19 @@ Thumbs.db
 # 本地测试输出
 tmp/
 
+# 本地验证用的临时产物：录制的画面序列（.tmp_movie/）、浏览器截图、
+# 下载到本地的导出模板等。都是 --write-movie / browser_check.mjs 生成的，
+# 动辄几百 MB，不要进仓库。
+#
+# 同样把 .tmp/.gdignore 放行：截图写进工程内就必须让 Godot 跳过它，
+# 不然图会被导入并打进 pck（和上面 build/ 是同一个坑）。
+.tmp/*
+!.tmp/.gdignore
+.tmp_*/
+.tmp_*.png
+
 # AI 助手的工作记忆（仅本地）
 .workbuddy/
+
+# 字体构建缓存（17MB 的原始 Noto Sans SC，由 tools/build_font.py 自动重新下载）
+.font-cache/
