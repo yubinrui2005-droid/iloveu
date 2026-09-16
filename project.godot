@@ -1,6 +1,10 @@
 ; Engine configuration file.
-; 工程名：Rogue FPS Prototype（肉鸽 FPS 最小原型）
-; 用 Godot 4 打开本文件所在目录即可导入工程。
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
 
 config_version=5
 
